@@ -1,0 +1,212 @@
+# -------------------------------------------------------
+# Общий шаблон для Spring-сервисов
+# -------------------------------------------------------
+x-spring-service: &spring-service
+  volumes:
+    - ~/.m2:/root/.m2
+    - ./common-maven-settings:/root/.m2/settings.xml
+  environment:
+    SPRING_PROFILES_ACTIVE: dev
+
+services:
+  # -------------------------------------------------------
+  # Мониторинг
+  # -------------------------------------------------------
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+
+  # -------------------------------------------------------
+  # Kafka
+  # -------------------------------------------------------
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+
+  # -------------------------------------------------------
+  # Redis
+  # -------------------------------------------------------
+  redis:
+    image: redis:7
+    container_name: redis
+    ports:
+      - "6379:6379"
+    restart: always
+
+  # -------------------------------------------------------
+  # Spring-сервисы
+  # -------------------------------------------------------
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    <<: *spring-service
+    volumes:
+      - ./api-gateway:/app
+    ports:
+      - "8080:8080"
+    depends_on:
+      - order-service
+      - payment-service
+      - inventory-service
+      - user-service
+      - analytics-service
+      - notification-service
+
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+    <<: *spring-service
+    volumes:
+      - ./order-service:/app
+    ports:
+      - "8081:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://order-db:5432/order
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+    depends_on:
+      - order-db
+
+  payment-service:
+    build:
+      context: ./payment-service
+      dockerfile: Dockerfile
+    <<: *spring-service
+    volumes:
+      - ./payment-service:/app
+    ports:
+      - "8082:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://payment-db:5432/payment
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+    depends_on:
+      - payment-db
+      - external-payment-gateway
+
+  external-payment-gateway:
+    build:
+      context: ./external-payment-gateway
+      dockerfile: Dockerfile
+    <<: *spring-service
+    volumes:
+      - ./external-payment-gateway:/app
+    ports:
+      - "8083:8080"
+
+  inventory-service:
+    build:
+      context: ./inventory-service
+      dockerfile: Dockerfile
+    <<: *spring-service
+    volumes:
+      - ./inventory-service:/app
+    ports:
+      - "8084:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://inventory-db:5432/inventory
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+    depends_on:
+      - inventory-db
+
+  user-service:
+    build:
+      context: ./user-service
+      dockerfile: Dockerfile
+    <<: *spring-service
+    volumes:
+      - ./user-service:/app
+    ports:
+      - "8085:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://user-db:5432/user
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+    depends_on:
+      - user-db
+
+  analytics-service:
+    build:
+      context: ./analytics-service
+      dockerfile: Dockerfile
+    <<: *spring-service
+    volumes:
+      - ./analytics-service:/app
+    ports:
+      - "8086:8080"
+
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    <<: *spring-service
+    volumes:
+      - ./notification-service:/app
+    ports:
+      - "8087:8080"
+
+  # -------------------------------------------------------
+  # Базы данных
+  # -------------------------------------------------------
+  order-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: order
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+
+  payment-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: payment
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+
+  inventory-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: inventory
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5434:5432"
+
+  user-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: user
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5435:5432"
