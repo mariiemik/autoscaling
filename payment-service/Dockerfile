@@ -1,21 +1,17 @@
-# Используем легкий образ с OpenJDK 17
-FROM eclipse-temurin:17-jdk
-
-# Рабочая директория
+# 1. Build stage
+FROM maven:3.9.6-eclipse-temurin-17 AS builder
 WORKDIR /app
-
-# Копируем pom.xml (для зависимостей)
 COPY pom.xml .
+RUN mvn -q -e -DskipTests dependency:go-offline
+COPY src ./src
+RUN mvn -q -e -DskipTests package
 
-# Кэшируем зависимости (через volume ~/.m2)
-# Если зависимости уже на хосте, этого можно не делать
-# RUN mvn dependency:go-offline
+# 2. Run stage (минимальный JRE)
+FROM eclipse-temurin:17-jre-alpine
+WORKDIR /app
+COPY --from=builder /app/target/*.jar app.jar
 
-# Копируем весь проект
-COPY . .
+# уменьшение памяти JVM
+ENV JAVA_OPTS="-Xms128m -Xmx256m"
 
-# Открываем порт приложения
-EXPOSE 8080
-
-# Запуск Spring Boot в dev режиме
-CMD ["mvn", "spring-boot:run", "-Dspring-boot.run.jvmArguments=-Xms128m -Xmx512m"]
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]

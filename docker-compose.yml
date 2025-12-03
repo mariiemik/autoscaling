@@ -1,13 +1,3 @@
-# -------------------------------------------------------
-# Общий шаблон для Spring-сервисов
-# -------------------------------------------------------
-x-spring-service: &spring-service
-  volumes:
-    - ~/.m2:/root/.m2
-    - ./common-maven-settings:/root/.m2/settings.xml
-  environment:
-    SPRING_PROFILES_ACTIVE: dev
-
 services:
   # -------------------------------------------------------
   # Мониторинг
@@ -24,9 +14,9 @@ services:
     ports:
       - "3000:3000"
 
-  # -------------------------------------------------------
-  # Kafka
-  # -------------------------------------------------------
+#   -------------------------------------------------------
+#   Kafka
+#   -------------------------------------------------------
   zookeeper:
     image: confluentinc/cp-zookeeper:latest
     environment:
@@ -36,7 +26,7 @@ services:
       - "2181:2181"
 
   kafka:
-    image: confluentinc/cp-kafka:latest
+    image: confluentinc/cp-kafka:7.5.0
     depends_on:
       - zookeeper
     environment:
@@ -46,6 +36,7 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     ports:
       - "9092:9092"
+
 
   # -------------------------------------------------------
   # Redis
@@ -60,138 +51,84 @@ services:
   # -------------------------------------------------------
   # Spring-сервисы
   # -------------------------------------------------------
+  # ---- Java Services ----
+
   api-gateway:
     build:
       context: ./api-gateway
-      dockerfile: Dockerfile
-    <<: *spring-service
-    volumes:
-      - ./api-gateway:/app
     ports:
       - "8080:8080"
     depends_on:
-      - order-service
-      - payment-service
-      - inventory-service
-      - user-service
-      - analytics-service
-      - notification-service
-
-  order-service:
-    build:
-      context: ./order-service
-      dockerfile: Dockerfile
-    <<: *spring-service
-    volumes:
-      - ./order-service:/app
-    ports:
-      - "8081:8080"
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://order-db:5432/order
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
-    depends_on:
-      - order-db
-
-  payment-service:
-    build:
-      context: ./payment-service
-      dockerfile: Dockerfile
-    <<: *spring-service
-    volumes:
-      - ./payment-service:/app
-    ports:
-      - "8082:8080"
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://payment-db:5432/payment
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
-    depends_on:
-      - payment-db
-      - external-payment-gateway
-
-  external-payment-gateway:
-    build:
-      context: ./external-payment-gateway
-      dockerfile: Dockerfile
-    <<: *spring-service
-    volumes:
-      - ./external-payment-gateway:/app
-    ports:
-      - "8083:8080"
-
-  inventory-service:
-    build:
-      context: ./inventory-service
-      dockerfile: Dockerfile
-    <<: *spring-service
-    volumes:
-      - ./inventory-service:/app
-    ports:
-      - "8084:8080"
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://inventory-db:5432/inventory
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
-    depends_on:
-      - inventory-db
+      - kafka
+      - redis
 
   user-service:
     build:
       context: ./user-service
-      dockerfile: Dockerfile
-    <<: *spring-service
-    volumes:
-      - ./user-service:/app
     ports:
-      - "8085:8080"
+      - "8081:8081"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://user-db:5432/user
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_DATASOURCE_URL: jdbc:postgresql://user-db:5432/users
     depends_on:
       - user-db
+      - kafka
 
-  analytics-service:
+  order-service:
     build:
-      context: ./analytics-service
-      dockerfile: Dockerfile
-    <<: *spring-service
-    volumes:
-      - ./analytics-service:/app
+      context: ./order-service
     ports:
-      - "8086:8080"
+      - "8082:8082"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://order-db:5432/orders
+    depends_on:
+      - order-db
+      - kafka
+
+  payment-service:
+    build:
+      context: ./payment-service
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://payment-db:5432/payments
+    depends_on:
+      - payment-db
+      - external-payment-gateway
+      - kafka
+
+  external-payment-gateway:
+    build:
+      context: ./external-payment-gateway
+    ports:
+      - "8099:8099"
+
+  inventory-service:
+    build:
+      context: ./inventory-service
+    ports:
+      - "8084:8084"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://inventory-db:5432/inventory
+    depends_on:
+      - inventory-db
+      - kafka
 
   notification-service:
     build:
       context: ./notification-service
-      dockerfile: Dockerfile
-    <<: *spring-service
-    volumes:
-      - ./notification-service:/app
     ports:
-      - "8087:8080"
+      - "8085:8085"
+    depends_on:
+      - kafka
 
-  # -------------------------------------------------------
-  # Базы данных
-  # -------------------------------------------------------
-  order-db:
-    image: postgres:15
-    environment:
-      POSTGRES_DB: order
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "5432:5432"
 
-  payment-db:
-    image: postgres:15
-    environment:
-      POSTGRES_DB: payment
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+  analytics-service:
+    build:
+      context: ./analytics-service
     ports:
-      - "5433:5432"
+      - "8086:8086"
+    depends_on:
+      - kafka
 
   inventory-db:
     image: postgres:15
@@ -200,7 +137,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5434:5432"
+      - "5433:5432"
 
   user-db:
     image: postgres:15
@@ -209,4 +146,21 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
+      - "5434:5432"
+  order-db:
+    image: postgres:15
+    environment:
+      POSTGRES_PASSWORD: pass
+      POSTGRES_USER: user
+      POSTGRES_DB: orders
+    ports:
       - "5435:5432"
+
+  payment-db:
+    image: postgres:15
+    environment:
+      POSTGRES_PASSWORD: pass
+      POSTGRES_USER: user
+      POSTGRES_DB: payments
+    ports:
+      - "5436:5432"
